@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Multiplayer Game</title>
+  </head>
+  <body>
+    <ul id="log"></ul>
+    <button id="action" onclick="doAction()">Send</button>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+    var socket = io();
+    
+    var counter = 0;
+    
+    var log = document.getElementById('log');
+
+    function doAction() {
+        msg = "Action " + counter;
+        counter ++;
+        socket.emit('turn', msg);
+    }
+
+    socket.on('turn', function(msg) {
+        var item = document.createElement('li');
+        item.textContent = msg;
+        log.appendChild(item);
+    });
+    </script>
+
+  </body>
+</html>

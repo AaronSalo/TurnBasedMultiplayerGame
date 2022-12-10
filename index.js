@@ -11,9 +11,13 @@ app.use(express.static(__dirname));
 
 var users = [];
 
+var clientRes;
+
 //send the html file
 app.get('/', (req, res) => { 
+    var path = url.parse(req.url).pathname;
     res.sendFile(__dirname + '/index.html');
+    clientRes = res;
 });
 //allows us to use local files
 app.use(express.static('public'));

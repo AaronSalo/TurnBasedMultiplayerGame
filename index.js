@@ -11,6 +11,8 @@ app.use(express.static(__dirname));
 
 var users = [];
 
+var NUM_ROWS = 5;
+
 var numCharactersSelected = 0;
 
 //send the html file
@@ -24,14 +26,15 @@ app.use(express.static('public'));
 
 class Character {
     constructor(name, movement, xPos, yPos) {
-      this.position = [xPos, yPos];
+      this.position = posToIndex([xPos, yPos]);
       this.name = name;
       this.movement = movement;
+      this.alive = true;
     }
     
     toMsg()
     {
-        return "|" + this.name + "," + this.movement + "," + this.position[0] + "," + this.position[1];
+        return "|" + this.name + "," + this.movement + "," + this.position;
     }
 
     updatePos(newPos)
@@ -40,8 +43,14 @@ class Character {
     }
   }
 
-var p1Characters = [new Character("Wilton", 3, 0, 0), new Character("golly", 2, 1, 5) ];
-var p2Characters = [new Character("Jack Skellington", 1, 4, 4), new Character("Lucifer", 2, 4, 5) ];
+  function posToIndex(pos) {
+    var y = pos[1] == 0 ? 0 : pos[1] -1;
+
+    return ((pos[0]  * NUM_ROWS) + y).toString();
+  }
+
+var p1Characters = [new Character("Wilton", 1, 0, 0), new Character("Golly", 3, 1, 5) ];
+var p2Characters = [new Character("Jack", 1, 4, 4), new Character("Bill", 2, 4, 5) ,new Character("Peter", 1, 3, 5)  ];
 
 function charsToMsg(characters)
 {
@@ -80,7 +89,7 @@ io.on('connection', (socket) => {
     var addr = socket.id;
     users.push(addr);
 
-    var initMsg = getInitMsg(p1Characters, p2Characters, 5, 5);
+    var initMsg = getInitMsg(p1Characters, p2Characters, NUM_ROWS, NUM_ROWS);
     console.log('User ' + users[0] + ' connected');
     socket.emit('init',  initMsg);
 
@@ -129,12 +138,63 @@ io.on('connection', (socket) => {
             msg.lastIndexOf("}")
         );
         var msg = "Player [" + playerNum + "] moved (" + charName + ") to pos {" + newPos+ "}";
+        var char = checkIfTakes(playerNum, newPos);
+
+        if(char != null)
+        {
+            char.alive = false;
+            io.emit("KILL", char.name);
+            var winner = isGameOver();
+            if( winner > 0)
+                io.emit("WINNER", winner); 
+            
+        }
         console.log("MOVE: " +msg);
         moveCharacter(charName, newPos, playerNum);
         io.emit('moveCharacter', msg);
     });
   });  
+  
 
+  function checkIfTakes(playerNum, pos)
+  {
+    var chars = playerNum == 1 ? p2Characters : p1Characters; //get the other characters players
+
+    for( var i = 0; i < chars.length; i++)
+    {
+      if(chars[i].position == pos)
+        return chars[i];
+    }
+    return null;
+  }
+
+  function isGameOver()
+  {
+    var p1HasAlive = false;
+    var p2HasAlive = false;
+    for(var i = 0 ; i < p1Characters.length; i++)
+    {
+        if(p1Characters[i].alive)
+        {
+            p1HasAlive = true;
+            break;
+        }
+    }
+    for(var i = 0 ; i < p2Characters.length; i++)
+    {
+        if(p2Characters[i].alive)
+        {
+            p2HasAlive = true;
+            break;
+        }
+    }
+
+    if(!p1HasAlive)
+        return 2; //p2 wins
+    if(!p2HasAlive)
+        return 1; //p1 wins
+    return -1; //noone wins
+  }
 
 server.listen(3000, () => {
     console.log("Running on localhost:3000");

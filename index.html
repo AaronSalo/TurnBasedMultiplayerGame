@@ -5,6 +5,7 @@
     <link rel="stylesheet" href="game.css">
   </head>
   <body>
+    <div id="turnCounter">Player 1 Starts.</div>
     <div id="container"></div>
     <div id="idDisplay">Select Player num</div>
     <div id="gameStatus">Waiting for another player to join...</div>
@@ -29,6 +30,7 @@
       var friendlyCharacters;
       var enemyCharacters;
       var selectedChar = "none";
+      var whosTurn = 1;
       var log = document.getElementById('log');
       
       const container = document.getElementById("container");
@@ -39,9 +41,10 @@
         //name,movement,xPos,yPos
         constructor(msg){
           var parse = msg.split(",");
-          this.position = posToIndex([parseInt(parse[2]), parseInt(parse[3]) ]);
+          this.position = parseInt(parse[2]);
           this.name = parse[0];
           this.movement = parse[1];
+          this.alive = true;
         }
 
         updatePos(newPos)
@@ -58,12 +61,15 @@
               msg.lastIndexOf("]")
           );
 
+          
           if(player != playerNum || !gameStarted)
             return;
+
           var index = msg.substring(
               msg.indexOf("{") + 1, 
               msg.lastIndexOf("}")
           );
+          document.getElementById(index)
 
           var container = document.getElementById(index)
 
@@ -80,7 +86,8 @@
             if(selectedChar != "none")
             {
               container.className = "grid-item-selected";
-              highlightCharacterMoves(parseInt(index), 2);
+              
+              highlightCharacterMoves(parseInt(index), findCharacter(selectedChar).movement);
             }
           }
       });
@@ -103,9 +110,28 @@
           document.getElementById("gameStatus").innerText = "GAME STARTED";
       });
 
+      //recieve message to KILL
+      socket.on('KILL', function(msg) {
+          console.log("KILL: " + msg);
+          var char = findCharacter(msg);
+          char.alive = false;
+          reset();
+      });
+
+
+      //recieve message GAME IS OVER
+      socket.on('WINNER', function(msg) {
+          console.log("WINNER: " + msg);
+          document.getElementById("gameStatus").innerText = "GAME OVER - PLAYER " + msg + " WINS!!!!!!";
+          var gameStarted = false;
+      });
       //recieve message that a turn was taken
       socket.on('moveCharacter', function(msg) {
           console.log("GOT MOVE COMMAND: " + msg);
+
+          document.getElementById("turnCounter").innerText = "Player " + (whosTurn +1) + "'s turn";
+          whosTurn = (whosTurn +1)%2;
+          
           var player = msg.substring(
             msg.indexOf("[") + 1, 
             msg.lastIndexOf("]")
@@ -173,7 +199,7 @@
       }
 
       function doAction(event) {
-          if(playerNum == -1)
+          if(playerNum == -1 || !gameStarted || whosTurn == playerNum -1)
             return;
 
           msg = "Player [" + playerNum + "]: Action " + counter + " with id {" + this.id + "}";
@@ -244,10 +270,26 @@
           chars = enemyCharacters;
         for(var i = 0 ; i < chars.length; i++)
         {
-          if((chars[i].position) == pos)
+          if((chars[i].position) == pos && chars[i].alive)
             return chars[i].name;
         }
         return "none";
+      }
+
+      function findCharacter(name)
+      {
+        for( var i = 0; i < friendlyCharacters.length; i++)
+        {
+          if(friendlyCharacters[i].name == name && friendlyCharacters[i].alive)
+            return friendlyCharacters[i];
+        }
+        
+        for( var i = 0; i < enemyCharacters.length; i++)
+        {
+          if(enemyCharacters[i].name == name && enemyCharacters[i].alive)
+            return enemyCharacters[i];
+        }
+        return null;
       }
       ///// END OF HELPER 
 
@@ -265,7 +307,7 @@
 
         for(var i = 0; i < chars.length; i++)
         {
-          if(chars[i].name === charName)
+          if(chars[i].name === charName && chars[i].alive)
           {
             var old = document.getElementById(chars[i].position);
             old.innerText = chars[i].position;
@@ -302,17 +344,23 @@
       function initCharPosVisual(p1Characters, p2Characters) {
         for(var i = 0; i < p1Characters.length; i++)
         {
-          var index = (p1Characters[i].position);
-          var container = document.getElementById(index);
-          container.innerText = p1Characters[i].name;
-          container.className = "grid-item-friendly";
+          if(p1Characters[i].alive)
+          {
+            var index = (p1Characters[i].position);
+            var container = document.getElementById(index);
+            container.innerText = p1Characters[i].name;
+            container.className = "grid-item-friendly";
+          }
         }
         for(var i = 0; i < p2Characters.length; i++)
         {
-          var index = (p2Characters[i].position);
-          var container = document.getElementById(index);
-          container.innerText = p2Characters[i].name;
-          container.className = "grid-item-enemy";
+          if(p2Characters[i].alive)
+          {
+            var index = (p2Characters[i].position);
+            var container = document.getElementById(index);
+            container.innerText = p2Characters[i].name;
+            container.className = "grid-item-enemy";
+          }
         }
       }
       // modified from https://stackoverflow.com/questions/57550082/creating-a-16x16-grid-using-javascript

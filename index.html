@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Multiplayer Game</title>
+    <link rel="stylesheet" href="game.css">
+  </head>
+  <body>
+    <div id="container"></div>
+    <div id="idDisplay">Select Player num</div>
+    <div id="gameStatus">Waiting for another player to join...</div>
+    <button id="idSelect1" onclick="selectPlayerId(this)">Player 1</button>
+      <button id="idSelect2" onclick="selectPlayerId(this)">Player 2</button>
+    
+    <ul id="log"></ul>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+      var socket = io();
+    
+      var NUM_ROWS = 5;
+      var counter = 0;
+      var playerNum = -1;
+      var gameStarted = false;
+
+      class initVals {
+        static CharacterFriendly = 0;
+        static CharacterEnemy = 1;
+        static RowCol = 2;
+      }
+      var friendlyCharacters;
+      var enemyCharacters;
+      var selectedChar = "none";
+      var log = document.getElementById('log');
+      
+      const container = document.getElementById("container");
+
+      class Character {
+        //build character obj from message
+        //we expect the message to be in the form:
+        //name,movement,xPos,yPos
+        constructor(msg){
+          var parse = msg.split(",");
+          this.position = posToIndex([parseInt(parse[2]), parseInt(parse[3]) ]);
+          this.name = parse[0];
+          this.movement = parse[1];
+        }
+
+        updatePos(newPos)
+        {
+          this.position = newPos;//indexToPos(newPos);
+        }
+      }
+
+      //recieve message that a turn was taken
+      socket.on('turn', function(msg) {
+          console.log("GOT TURN COMMAND: " + msg);
+          var player = msg.substring(
+              msg.indexOf("[") + 1, 
+              msg.lastIndexOf("]")
+          );
+
+          if(player != playerNum || !gameStarted)
+            return;
+          var index = msg.substring(
+              msg.indexOf("{") + 1, 
+              msg.lastIndexOf("}")
+          );
+
+          var container = document.getElementById(index)
+
+          if(selectedChar != "none")
+          {
+            if(container.className == "grid-item-moveable")
+            {
+              moveCharacter(selectedChar, index, true);
+              reset();
+              selectedChar = "none";
+            }
+          } else if(player == playerNum){
+            selectedChar = isFriendlyPos(index)
+            if(selectedChar != "none")
+            {
+              container.className = "grid-item-selected";
+              highlightCharacterMoves(parseInt(index), 2);
+            }
+          }
+      });
+
+      //recieve message that a turn was taken
+      socket.on('selectPlayer', function(msg) {
+          console.log(msg); //someone selected player #
+          var index = msg.substring(
+              msg.indexOf("{") + 1, 
+              msg.lastIndexOf("}")
+          );
+
+          document.getElementById(index).disabled = true;
+      });
+
+      //recieve message we can START THE GAME
+      socket.on('START', function(msg) {
+          console.log("START GAME");
+          gameStarted = true;
+          document.getElementById("gameStatus").innerText = "GAME STARTED";
+      });
+
+      //recieve message that a turn was taken
+      socket.on('moveCharacter', function(msg) {
+          console.log("GOT MOVE COMMAND: " + msg);
+          var player = msg.substring(
+            msg.indexOf("[") + 1, 
+            msg.lastIndexOf("]")
+            );
+          if(playerNum != player)
+          {
+            console.log("trying to move character");
+            var charName = msg.substring(
+            msg.indexOf("(") + 1, 
+            msg.lastIndexOf(")")
+            );
+            var newPos = msg.substring(
+                msg.indexOf("{") + 1, 
+                msg.lastIndexOf("}")
+            );
+            moveCharacter(charName, newPos, false);
+          }
+      });
+
+      //get the positions of everything on the board
+      socket.on('init', function(msg) {
+          console.log("Initializing board:");
+          var parse = msg.split(";");
+          console.log(parse);
+          friendlyCharacters = loadCharacters(parse[initVals.CharacterFriendly]);
+          enemyCharacters = loadCharacters(parse[initVals.CharacterEnemy]);
+          
+          var rowsCols = parse[initVals.RowCol].split(",");
+          makeRows(rowsCols[0], rowsCols[1]);
+          initCharPosVisual(friendlyCharacters, enemyCharacters);
+      });
+
+      function loadCharacters(msg)
+      {
+        var parse = msg.split("|");
+        var characters = []
+        
+        for(var i = 1; i < parse.length; i++)
+        {
+          characters.push(new Character(parse[i]) );
+        }
+        return characters;
+      }
+
+      function selectPlayerId(event)
+      {
+        msg = "Someone selected {" + event.id + "}";
+        console.log("Selected player " + event.id);
+        document.getElementById("idSelect1").disabled = true;
+        document.getElementById("idSelect2").disabled = true;
+
+        var disp = document.getElementById("idDisplay");
+        if(event.id == "idSelect1")
+        {
+          disp.innerText = "Player 1";
+          playerNum = 1;
+        }
+        else if (event.id == "idSelect2")
+        {
+          disp.innerText = "Player 2";
+          playerNum = 2;
+        }
+
+        socket.emit('selectPlayer', msg);
+      }
+
+      function doAction(event) {
+          if(playerNum == -1)
+            return;
+
+          msg = "Player [" + playerNum + "]: Action " + counter + " with id {" + this.id + "}";
+          counter ++;
+          socket.emit('turn', msg);
+      }
+
+      function highlightCharacterMoves(pos, numMoves)
+      {
+        var checkedPositions = [];
+        showCharacterMoves(pos, numMoves, checkedPositions);
+      }
+      function showCharacterMoves(pos, numMoves, checkedPositions)
+      {
+        if(numMoves == 0 || checkedPositions.includes(pos) )
+          return;
+
+        checkedPositions.push(pos);
+
+        var up = pos - NUM_ROWS;
+        var down = pos + NUM_ROWS;
+        var left = pos - 1;
+        var right = pos + 1;
+
+        if( !checkedPositions.includes(up) && up > 0)
+        {
+          document.getElementById(up).className = "grid-item-moveable";
+          showCharacterMoves(up, numMoves-1, checkedPositions);
+        }
+        if(!checkedPositions.includes(down) && down < NUM_ROWS * NUM_ROWS)
+        {
+          document.getElementById(down).className = "grid-item-moveable";
+          showCharacterMoves(down, numMoves-1, checkedPositions);
+        }
+
+        if(!checkedPositions.includes(left) && pos%NUM_ROWS != 0)
+        {
+          document.getElementById(left).className = "grid-item-moveable";
+          showCharacterMoves(left, numMoves-1, checkedPositions);
+        }
+
+        if(!checkedPositions.includes(right) && right%(NUM_ROWS) != 0 && right < NUM_ROWS * NUM_ROWS)
+        {
+          document.getElementById(right).className = "grid-item-moveable";
+          showCharacterMoves(right, numMoves-1, checkedPositions);
+        }
+      }
+
+
+      /////****** HELPER FUNCTIONS
+      function posToIndex(pos) {
+        var y = pos[1] == 0 ? 0 : pos[1] -1;
+
+        return ((pos[0]  * NUM_ROWS) + y).toString();
+      }
+      function indexToPos(ind)
+      {
+        var x = (ind % NUM_ROWS);
+        var y = Math.floor(ind/NUM_ROWS)-1;
+        return [x, y];
+      }
+      function isFriendlyPos(pos) 
+      {
+        var chars = [];
+        if(playerNum == 1)
+          chars = friendlyCharacters;
+        else
+          chars = enemyCharacters;
+        for(var i = 0 ; i < chars.length; i++)
+        {
+          if((chars[i].position) == pos)
+            return chars[i].name;
+        }
+        return "none";
+      }
+      ///// END OF HELPER 
+
+      function moveCharacter(charName, newPos, myChars)
+      {
+        console.log("moving character " + charName);
+
+        var chars;
+
+        if(myChars)
+          chars = playerNum == 1 ? friendlyCharacters : enemyCharacters;
+        else
+          chars = playerNum != 1 ? friendlyCharacters : enemyCharacters;
+
+
+        for(var i = 0; i < chars.length; i++)
+        {
+          if(chars[i].name === charName)
+          {
+            var old = document.getElementById(chars[i].position);
+            old.innerText = chars[i].position;
+            chars[i].updatePos(newPos);
+            var msg = "Player [" + playerNum + "] moved (" + charName + ") to pos {" + newPos+ "}";
+            console.log(msg);
+
+            if(myChars)
+            {
+              console.log("sending move to server");
+              socket.emit("moveCharacter", msg);
+            }
+            else{
+              reset();
+            }
+           return true;
+          }
+        }
+        
+        return false;
+      }
+
+      function reset()
+      {
+        for(var i = 0; i < NUM_ROWS *NUM_ROWS; i ++)
+        {
+          var e = document.getElementById(i);
+          e.className = "grid-item";
+        }
+        initCharPosVisual(friendlyCharacters, enemyCharacters);
+      }
+
+      /////****** GUI INITIALIZATION
+      function initCharPosVisual(p1Characters, p2Characters) {
+        for(var i = 0; i < p1Characters.length; i++)
+        {
+          var index = (p1Characters[i].position);
+          var container = document.getElementById(index);
+          container.innerText = p1Characters[i].name;
+          container.className = "grid-item-friendly";
+        }
+        for(var i = 0; i < p2Characters.length; i++)
+        {
+          var index = (p2Characters[i].position);
+          var container = document.getElementById(index);
+          container.innerText = p2Characters[i].name;
+          container.className = "grid-item-enemy";
+        }
+      }
+      // modified from https://stackoverflow.com/questions/57550082/creating-a-16x16-grid-using-javascript
+      function makeRows(rows, cols) {
+        container.style.setProperty('--grid-rows', rows);
+        container.style.setProperty('--grid-cols', cols);
+        for (c = 0; c < (rows * cols); c++) {
+          let cell = document.createElement("div");
+          cell.addEventListener("click", doAction, false);
+          cell.setAttribute('id', c);
+          cell.innerText = c;
+          container.appendChild(cell).className = "grid-item";
+        };
+      };
+      ////// END OF GUI INIT
+
+      ////MAIN PROG
+    </script>
+
+
+  </body>
+</html>

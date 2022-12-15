@@ -23,6 +23,13 @@
   text-align: center;
 }
 
+.grid-item-enemy {
+  padding: 1em;
+  border: 1px solid rgb(247, 241, 241);
+  background-color: rgb(235, 238, 88);
+  text-align: center;
+}
+
 .grid-item-selected {
   padding: 1em;
   border: 1px solid rgb(75, 20, 20);
